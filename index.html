@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>打磚塊遊戲</title>
+    <style>
+        body {
+            text-align: center;
+            background-color: #f0f0f0;
+            color: white;
+        }
+        canvas {
+            border: 1px solid #000;
+            display: block;
+            margin: 0 auto;
+            background-color: transparent;
+        }
+        #score, #lives {
+            font-size: 24px;
+        }
+        #gameOver {
+            display: none;
+            font-size: 32px;
+        }
+        #selection {
+            margin: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        select {
+            margin: 0 10px;
+            font-size: 16px;
+        }
+        button {
+            font-size: 16px;
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body onload="changeBackground(document.getElementById('background').value)">
+
+<div id="selection">
+    <h2>選擇難度</h2>
+    <select id="difficulty">
+        <option value="easy">簡單</option>
+        <option value="medium">中等</option>
+        <option value="hard">困難</option>
+    </select>
+
+    <h2>選擇背景主題</h2>
+    <select id="background" onchange="changeBackground(this.value)">
+        <option value="night">夜空</option>
+        <option value="forest">森林</option>
+        <option value="desert">沙漠</option>
+    </select>
+    
+    <button onclick="startGame()">開始遊戲</button>
+</div>
+
+<div id="score">分數: 0</div>
+<div id="lives">生命: 3</div>
+<canvas id="gameCanvas" width="480" height="320"></canvas>
+<div id="gameOver">遊戲結束！<br>得分: <span id="finalScore"></span><br><button onclick="restartGame()">重新開始</button></div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let ballRadius = 10;
+    let x, y, dx, dy;
+    let paddleHeight = 10;
+    let paddleWidth = 75;
+    let paddleX;
+    let rightPressed = false;
+    let leftPressed = false;
+    let score = 0;
+    let lives = 3;
+    let gameOver = false;
+
+    let bricks = [];
+    const brickWidth = 75;
+    const brickHeight = 20;
+    const brickPadding = 10;
+    const brickOffsetTop = 30;
+    const brickOffsetLeft = 30;
+
+    let powerUps = [];
+    let comboCount = 0; // 連擊計數器
+
+    function startGame() {
+        const difficulty = document.getElementById('difficulty').value;
+        document.getElementById('selection').style.display = 'none';
+        initializeGame(difficulty);
+        draw();
+    }
+
+    function changeBackground(theme) {
+        if (theme === 'night') {
+            document.body.style.backgroundImage = "url('https://csie.nfu.edu.tw/upload/activityImg/20230107135448hb05.jpg')";
+        } else if (theme === 'forest') {
+            document.body.style.backgroundImage = "url('https://csie.nfu.edu.tw/upload/activityImg/20230107135448x3E1.jpg')";
+        } else if (theme === 'desert') {
+            document.body.style.backgroundImage = "url('https://csie.nfu.edu.tw/upload/activityImg/202301071354357Qy1.jpg')";
+        }
+        document.body.style.backgroundSize = 'cover';
+    }
+
+    function initializeGame(difficulty) {
+        paddleX = (canvas.width - paddleWidth) / 2;
+        score = 0;
+        lives = 3;
+        gameOver = false;
+        comboCount = 0; // 重置連擊計數器
+        x = canvas.width / 2;
+        y = canvas.height - 30;
+
+        if (difficulty === 'easy') {
+            dx = 2;
+            dy = -2;
+            createBricks(1, 5, 1);
+        } else if (difficulty === 'medium') {
+            dx = 3;
+            dy = -3;
+            createBricks(2, 5, 3);
+        } else if (difficulty === 'hard') {
+            dx = 4;
+            dy = -4;
+            createBricks(3, 5, 3);
+        }
+
+        document.getElementById('lives').innerText = '生命: ' + lives;
+    }
+
+    function createBricks(hitsRequired, columns, rows) {
+        bricks = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < columns; c++) {
+                bricks.push({
+                    x: c * (brickWidth + brickPadding) + brickOffsetLeft,
+                    y: r * (brickHeight + brickPadding) + brickOffsetTop,
+                    status: 1,
+                    hitsRequired: hitsRequired,
+                    color: hitsRequired === 1 ? '#0095DD' : (hitsRequired === 2 ? '#FF5733' : '#FFC300')
+                });
+            }
+        }
+    }
+
+    document.addEventListener('keydown', keyDownHandler);
+    document.addEventListener('keyup', keyUpHandler);
+
+    function keyDownHandler(e) {
+        if (e.key === 'Right' || e.key === 'ArrowRight') {
+            rightPressed = true;
+        } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+            leftPressed = true;
+        }
+    }
+
+    function keyUpHandler(e) {
+        if (e.key === 'Right' || e.key === 'ArrowRight') {
+            rightPressed = false;
+        } else if (e.key === 'Left' || e.key === 'ArrowLeft') {
+            leftPressed = false;
+        }
+    }
+
+    function collisionDetection() {
+        for (let b of bricks) {
+            if (b.status === 1) {
+                if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                    dy = -dy;
+                    b.hitsRequired--;
+                    if (b.hitsRequired <= 0) {
+                        b.status = 0;
+                        score += 10; // 每擊破一個磚塊基礎得分
+                        comboCount++; // 增加連擊計數
+
+                        // 計算額外分數
+                        if (comboCount > 1) {
+                            score += (comboCount - 1) * 5; // 每次連擊額外加分
+                        }
+
+                        document.getElementById('score').innerText = '分數: ' + score;
+
+                        // 隨機掉落道具
+                        if (Math.random() < 0.3) {
+                            dropPowerUp(b.x + brickWidth / 2, b.y + brickHeight);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 碰撞檢測道具
+        for (let powerUp of powerUps) {
+            if (powerUp.active) {
+                if (x > powerUp.x && x < powerUp.x + 20 && y > powerUp.y && y < powerUp.y + 20) {
+                    applyPowerUp(powerUp.type);
+                    powerUp.active = false; // 收集道具
+                }
+            }
+        }
+
+        // 檢查是否所有磚塊都被摧毀
+        if (bricks.every(b => b.status === 0)) {
+            setTimeout(() => {
+                gameOver = true;
+                document.getElementById('finalScore').innerText = score;
+                document.getElementById('gameOver').style.display = 'block';
+            }, 1000);
+        }
+    }
+
+    function dropPowerUp(x, y) {
+        const types = ['expand', 'shrink', 'speedup', 'slowdown'];
+        const type = types[Math.floor(Math.random() * types.length)];
+        powerUps.push({ x: x, y: y, type: type, active: true });
+    }
+
+    function applyPowerUp(type) {
+        if (type === 'expand') {
+            paddleWidth *= 1.5;
+            setTimeout(() => {
+                paddleWidth /= 1.5;
+            }, 5000);
+        } else if (type === 'shrink') {
+            paddleWidth *= 0.5;
+            setTimeout(() => {
+                paddleWidth *= 2;
+            }, 5000);
+        } else if (type === 'speedup') {
+            dx *= 1.5;
+            dy *= 1.5;
+            setTimeout(() => {
+                dx /= 1.5;
+                dy /= 1.5;
+            }, 10000);
+        } else if (type === 'slowdown') {
+            dx *= 0.5;
+            dy *= 0.5;
+            setTimeout(() => {
+                dx *= 2;
+                dy *= 2;
+            }, 10000);
+        }
+    }
+
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#0095DD';
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
+        ctx.fillStyle = '#0095DD';
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawBricks() {
+        for (let b of bricks) {
+            if (b.status === 1) {
+                ctx.beginPath();
+                ctx.rect(b.x, b.y, brickWidth, brickHeight);
+                ctx.fillStyle = b.color;
+                ctx.fill();
+                ctx.closePath();
+                
+                // 顯示需擊打次數
+                ctx.fillStyle = '#FFFFFF';
+                ctx.font = '12px Arial';
+                ctx.fillText(b.hitsRequired, b.x + brickWidth / 2 - 5, b.y + brickHeight / 2 + 5);
+            }
+        }
+    }
+
+    function drawPowerUps() {
+        for (let powerUp of powerUps) {
+            if (powerUp.active) {
+                ctx.beginPath();
+                ctx.rect(powerUp.x, powerUp.y, 20, 20);
+                ctx.fillStyle = powerUp.type === 'expand' ? '#FF5733' : (powerUp.type === 'shrink' ? '#FFC300' : (powerUp.type === 'speedup' ? '#33FF57' : '#FF33A5'));
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+    }
+
+    function draw() {
+        if (gameOver) return;
+
+        ctx.fillStyle = "rgba(0, 0, 0, 0.2)"; // 黑色半透明背景
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        drawPowerUps();
+        collisionDetection();
+
+        if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+            dx = -dx;
+        }
+        if (y + dy < ballRadius) {
+            dy = -dy;
+        } else if (y + dy > canvas.height - ballRadius) {
+            if (x > paddleX && x < paddleX + paddleWidth) {
+                dy = -dy;
+                comboCount = 0; // 碰到球拍時重置連擊計數器
+            } else {
+                lives--;
+                document.getElementById('lives').innerText = '生命: ' + lives;
+                if (lives <= 0) {
+                    gameOver = true;
+                    document.getElementById('finalScore').innerText = score;
+                    document.getElementById('gameOver').style.display = 'block';
+                } else {
+                    // 重新設定球的位置
+                    x = canvas.width / 2;
+                    y = canvas.height - 30;
+                    dx = 2; // 重設球速
+                    dy = -2;
+                }
+            }
+        }
+
+        if (rightPressed && paddleX < canvas.width - paddleWidth) {
+            paddleX += 7;
+        } else if (leftPressed && paddleX > 0) {
+            paddleX -= 7;
+        }
+
+        x += dx;
+        y += dy;
+        requestAnimationFrame(draw);
+    }
+
+    function restartGame() {
+        document.getElementById('gameOver').style.display = 'none';
+        document.location.reload();
+    }
+</script>
+
+</body>
+</html>
